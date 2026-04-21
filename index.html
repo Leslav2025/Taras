@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Пригоди Тараса: UA Edition</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
     <style>
         body { margin: 0; background: #0f0c29; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; touch-action: manipulation; color: white; overflow: hidden; }
@@ -31,7 +32,7 @@
                 • <b>Рівень 1</b>: 100 монет.<br>
                 • <b>Рівень 2</b>: 300 монет.<br>
                 • <b>ВИВІД</b>: Назбирай <b>500 монет</b> для виплати!<br>
-                • Всі монети відновлюються після повного збору.
+                • Після виводу рахунок обнуляється.
             </p>
             <button class="close-btn" onclick="closeRules()">ГРАТИ</button>
         </div>
@@ -54,38 +55,56 @@
         <div class="btn" id="rightBtn">→</div>
     </div>
 <script>
+const tg = window.Telegram.WebApp;
+tg.expand();
+
 function openRules() { document.getElementById('rulesModal').style.display = "block"; }
 function closeRules() { document.getElementById('rulesModal').style.display = "none"; }
+
 const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
     manifestUrl: 'https://leslav2025.github.io/Taras/tonconnect-manifest.json',
     buttonRootId: 'ton-connect-btn'
 });
-tonConnectUI.onStatusChange(wallet => { document.getElementById('payBtn').style.display = wallet ? 'block' : 'none'; });
+
+tonConnectUI.onStatusChange(wallet => { 
+    document.getElementById('payBtn').style.display = wallet ? 'block' : 'none'; 
+});
+
 async function sendTransaction() {
-    const transaction = { validUntil: Math.floor(Date.now() / 1000) + 60, messages: [{ address: "UQDXq1iAqu88tVRG62_k03kAXELu_1gzRBMye-VZoFRIRtWw", amount: "10000000" }] };
+    const transaction = { 
+        validUntil: Math.floor(Date.now() / 1000) + 60, 
+        messages: [{ address: "UQDXq1iAqu88tVRG62_k03kAXELu_1gzRBMye-VZoFRIRtWw", amount: "10000000" }] 
+    };
     try { await tonConnectUI.sendTransaction(transaction); activateShield(); } catch (e) { alert("Скасовано"); }
 }
+
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const scoreElement = document.getElementById('score');
 const levelElement = document.getElementById('lvl');
 const timerElement = document.getElementById('timer');
 const lvlInfo = document.getElementById('level-info');
+
 let audioCtx;
 function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); }
 function playSound(freq, type, duration, vol = 0.1) { if(!audioCtx) return; const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain(); osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime); gain.gain.setValueAtTime(vol, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration); osc.connect(gain); gain.connect(audioCtx.destination); osc.start(); osc.stop(audioCtx.currentTime + duration); }
+
 canvas.width = 800; canvas.height = 400;
-let score = 0; let level = 1; let isInvincible = false; let shieldTimer = 0; let portalActive = false;
+let score = 0; let level = 1; let isInvincible = false; let shieldTimer = 0; let portalActive = false; let isGameOver = false;
+
 const player = { x: 50, y: 300, width: 32, height: 45, dx: 0, dy: 0, speed: 6.5, jump: -16, grounded: false };
 const enemy = { x: 400, y: 205, width: 35, height: 35, speed: 3.5, range: 180, startX: 400 };
 const portal = { x: 720, y: 80, width: 45, height: 60 };
+
 const backgrounds = ['linear-gradient(#1e3c72 0%, #2a5298 100%)','linear-gradient(#0f0c29 0%, #302b63 100%)','linear-gradient(#2c3e50 0%, #000000 100%)'];
 const platforms = [{ x: 0, y: 380, width: 800, height: 20, color: '#4b3621' },{ x: 100, y: 280, width: 150, height: 15, color: '#ffd700' },{ x: 350, y: 240, width: 250, height: 15, color: '#ffd700' },{ x: 150, y: 140, width: 120, height: 15, color: '#ffd700' },{ x: 550, y: 140, width: 150, height: 15, color: '#ffd700' }];
 let coins = [{x: 170, y: 240}, {x: 470, y: 200}, {x: 200, y: 100}, {x: 600, y: 100}].map(c => ({...c, collected: false}));
+
 function activateShield() {
     isInvincible = true; shieldTimer = 30; timerElement.style.visibility = 'visible'; playSound(880, 'triangle', 0.5, 0.2);
     let countdown = setInterval(() => { shieldTimer--; timerElement.innerText = `🛡️ ${shieldTimer}с`; if (shieldTimer <= 0) { isInvincible = false; timerElement.style.visibility = 'hidden'; clearInterval(countdown); } }, 1000);
 }
+
 function startNextLevel() {
     if (level >= 3 && score >= 500) { showVictoryScreen(); return; }
     level++; levelElement.innerText = level; portalActive = false; player.x = 50; player.y = 300; enemy.speed += 1.5;
@@ -93,48 +112,70 @@ function startNextLevel() {
     lvlInfo.innerText = "РІВЕНЬ " + level; lvlInfo.style.display = 'block'; setTimeout(() => lvlInfo.style.display = 'none', 2000);
     playSound(1200, 'triangle', 0.5);
 }
+
 async function showVictoryScreen() {
+    isGameOver = true;
     const walletAddress = tonConnectUI.account ? tonConnectUI.account.address : "Не підключено";
-    const messageText = encodeURIComponent(`🏆 Я ВИГРАВ У ГРІ ТАРАС!\nРахунок: ${score} монет\nГаманець: ${walletAddress}\nПрошу виплатити нагороду в UA.`);
+    const currentFinalScore = score;
+    
+    // БЛОКУВАННЯ ПОВТОРНОГО ВИВОДУ: Обнуляємо рахунок відразу
+    score = 0;
+    scoreElement.innerText = "0";
+
+    const messageText = encodeURIComponent(`🏆 Я ВИГРАВ У ГРІ ТАРАС!\nРахунок: ${currentFinalScore} монет\nГаманець: ${walletAddress}\nПрошу виплатити нагороду в UA.`);
     const botLink = `https://t.me/tokenpist_bot?text=${messageText}`;
+    
     const victoryDiv = document.createElement('div');
     victoryDiv.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:200; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; color:#ffd700; padding: 20px;";
-    victoryDiv.innerHTML = `<h1 style="font-size:40px; margin:0;">🇺🇦 ВИТЯЗЬ!</h1><p style="font-size:20px; color:white;">Ви назбирали ${score} UA!</p><div style="display:flex; flex-direction:column; gap:15px; margin-top:20px; width:100%; max-width:300px;"><a href="${botLink}" target="_blank" style="text-decoration:none; background:#0088cc; color:white; padding:15px; border-radius:15px; font-weight:bold; font-size:18px;">ВИВЕСТИ В БОТ</a><button onclick="location.reload()" style="background:#ffd700; color:black; border:none; padding:15px; border-radius:15px; font-weight:bold; font-size:18px;">ЩЕ РАЗ</button></div>`;
+    victoryDiv.innerHTML = `<h1 style="font-size:40px; margin:0;">🇺🇦 ВИТЯЗЬ!</h1><p style="font-size:20px; color:white;">Ви назбирали ${currentFinalScore} UA!</p><div style="display:flex; flex-direction:column; gap:15px; margin-top:20px; width:100%; max-width:300px;"><a href="${botLink}" target="_blank" style="text-decoration:none; background:#0088cc; color:white; padding:15px; border-radius:15px; font-weight:bold; font-size:18px;">ВИВЕСТИ В БОТ</a><button onclick="location.reload()" style="background:#ffd700; color:black; border:none; padding:15px; border-radius:15px; font-weight:bold; font-size:18px;">ЗІГРАТИ ЗНОВУ</button></div>`;
     document.body.appendChild(victoryDiv);
 }
+
 const keys = { Left: false, Right: false, Up: false };
 const setupBtn = (id, key) => { const el = document.getElementById(id); el.addEventListener('touchstart', (e) => { e.preventDefault(); initAudio(); keys[key] = true; }); el.addEventListener('touchend', () => keys[key] = false); };
 setupBtn('leftBtn','Left'); setupBtn('rightBtn','Right'); setupBtn('jumpBtn','Up');
+
 function update() {
+    if (isGameOver) return;
     if (keys.Right) player.dx = player.speed; else if (keys.Left) player.dx = -player.speed; else player.dx *= 0.85;
     if (keys.Up && player.grounded) { player.dy = player.jump; player.grounded = false; playSound(440, 'sine', 0.1); }
     player.dy += 0.85; player.x += player.dx; player.y += player.dy;
+    
     if (player.x < 0) player.x = 0; if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
     enemy.x += enemy.speed; if (enemy.x > enemy.startX + enemy.range || enemy.x < enemy.startX) enemy.speed *= -1;
+    
     if (player.x < enemy.x + enemy.width && player.x + player.width > enemy.x && player.y < enemy.y + enemy.height && player.y + player.height > enemy.y) {
         if (isInvincible) { enemy.x = -200; setTimeout(() => { enemy.x = enemy.startX; }, 3000); }
         else { score = Math.max(0, score - 50); scoreElement.innerText = score; player.x = 50; player.y = 300; playSound(150, 'sawtooth', 0.3); }
     }
+    
     player.grounded = false;
     platforms.forEach(p => { if (player.x < p.x + p.width && player.x + player.width > p.x && player.y < p.y + p.height && player.y + player.height > p.y) { if (player.dy > 0 && player.y + player.height - player.dy <= p.y) { player.y = p.y - player.height; player.dy = 0; player.grounded = true; } } });
+    
     coins.forEach(coin => {
         if (!coin.collected && player.x < coin.x+20 && player.x+player.width > coin.x && player.y < coin.y+20 && player.y+player.height > coin.y) {
             coin.collected = true; score += 10; scoreElement.innerText = score; playSound(1000, 'sine', 0.05);
             if (coins.every(c => c.collected)) { setTimeout(() => { coins.forEach(c => c.collected = false); }, 800); }
         }
     });
+
     if (level === 1 && score >= 100) portalActive = true;
     if (level === 2 && score >= 300) portalActive = true;
     if (level === 3 && score >= 500) portalActive = true;
+    
     if (portalActive && player.x < portal.x + portal.width && player.x + player.width > portal.x && player.y < portal.y + portal.height && player.y + player.height > portal.y) { startNextLevel(); }
     draw(); requestAnimationFrame(update);
 }
+
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     platforms.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.width, p.height); });
     ctx.fillStyle = '#ffd700'; coins.forEach(c => { if(!c.collected) { ctx.beginPath(); ctx.arc(c.x+10, c.y+10, 10, 0, Math.PI*2); ctx.fill(); } });
+    
     if (portalActive) { ctx.fillStyle = '#00ffcc'; ctx.shadowBlur = 15; ctx.shadowColor = '#00ffcc'; ctx.fillRect(portal.x, portal.y, portal.width, portal.height); ctx.shadowBlur = 0; ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial'; ctx.fillText("ПОРТАЛ", portal.x, portal.y - 10); }
+    
     ctx.fillStyle = '#7f8c8d'; ctx.beginPath(); ctx.ellipse(enemy.x+17, enemy.y+17, 20, 15, 0, 0, Math.PI*2); ctx.fill();
+    
     ctx.globalAlpha = isInvincible ? (Math.sin(Date.now()/50)*0.5+0.5) : 1.0;
     ctx.fillStyle = '#0057b7'; ctx.fillRect(player.x, player.y + 22, player.width, 23);
     ctx.fillStyle = '#ffd700'; ctx.fillRect(player.x, player.y, player.width, 22);
