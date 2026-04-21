@@ -2,96 +2,79 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <title>Гра Тарас - Платформер</title>
+    <title>Пригоди Тараса</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #222; font-family: sans-serif; }
-        canvas { display: block; background: #a5f3fc; box-shadow: 0 0 20px rgba(0,0,0,0.5); margin: 20px auto; border-radius: 8px; }
-        .info { color: white; text-align: center; }
+        body { margin: 0; background: #222; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
+        canvas { background: #a5f3fc; border: 4px solid #fff; border-radius: 8px; margin-top: 10px; }
+        .stats { color: white; font-size: 24px; margin: 10px; }
     </style>
 </head>
 <body>
-    <div class="info">
-        <h1>Пригоди Тараса</h1>
-        <p>Стрілки — рух, Пробіл — стрибок</p>
-    </div>
+    <div class="stats">Зібрано скарбів: <span id="score">0</span></div>
     <canvas id="game"></canvas>
 
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const scoreElement = document.getElementById('score');
 
 canvas.width = 800;
 canvas.height = 400;
 
-const config = {
-    gravity: 0.6,
-    friction: 0.8
-};
-
-const player = {
-    x: 100,
-    y: 300,
-    width: 32,
-    height: 40,
-    color: '#e63946',
-    dx: 0,
-    dy: 0,
-    speed: 5,
-    jumpForce: -12,
-    grounded: false
-};
-
-// Платформи (наші перешкоди)
+let score = 0;
+const player = { x: 50, y: 300, width: 30, height: 40, dx: 0, dy: 0, speed: 5, jump: -12, grounded: false };
 const platforms = [
-    { x: 0, y: 380, width: 800, height: 20 },   // Підлога
+    { x: 0, y: 380, width: 800, height: 20 },
     { x: 200, y: 280, width: 150, height: 20 },
-    { x: 450, y: 200, width: 150, height: 20 },
-    { x: 100, y: 150, width: 100, height: 20 }
+    { x: 450, y: 200, width: 150, height: 20 }
+];
+
+// Додаємо монети
+let coins = [
+    { x: 260, y: 240, collected: false },
+    { x: 510, y: 160, collected: false },
+    { x: 100, y: 100, collected: false }
 ];
 
 const keys = {};
-
 window.addEventListener('keydown', e => keys[e.code] = true);
 window.addEventListener('keyup', e => keys[e.code] = false);
 
-function checkCollision(obj1, obj2) {
-    return obj1.x < obj2.x + obj2.width &&
-           obj1.x + obj1.width > obj2.x &&
-           obj1.y < obj2.y + obj2.height &&
-           obj1.y + obj1.height > obj2.y;
-}
-
 function update() {
-    // Горизонтальний рух
     if (keys['ArrowRight']) player.dx = player.speed;
     else if (keys['ArrowLeft']) player.dx = -player.speed;
-    else player.dx *= config.friction;
+    else player.dx *= 0.8;
 
-    // Стрибок
     if (keys['Space'] && player.grounded) {
-        player.dy = player.jumpForce;
+        player.dy = player.jump;
         player.grounded = false;
     }
 
-    // Гравітація
-    player.dy += config.gravity;
-    
-    // Рух по осях
+    player.dy += 0.6; // Гравітація
     player.x += player.dx;
     player.y += player.dy;
 
-    // Перевірка колізій з платформами
     player.grounded = false;
-    for (let plat of platforms) {
-        if (checkCollision(player, plat)) {
-            // Якщо падаємо зверху на платформу
-            if (player.dy > 0 && player.y + player.height - player.dy <= plat.y) {
-                player.y = plat.y - player.height;
+    platforms.forEach(p => {
+        if (player.x < p.x + p.width && player.x + player.width > p.x &&
+            player.y < p.y + p.height && player.y + player.height > p.y) {
+            if (player.dy > 0) {
+                player.y = p.y - player.height;
                 player.dy = 0;
                 player.grounded = true;
             }
         }
-    }
+    });
+
+    // Перевірка збору монет
+    coins.forEach(coin => {
+        if (!coin.collected && player.x < coin.x + 20 && player.x + player.width > coin.x &&
+            player.y < coin.y + 20 && player.y + player.height > coin.y) {
+            coin.collected = true;
+            score += 1;
+            scoreElement.innerText = score;
+        }
+    });
 
     draw();
     requestAnimationFrame(update);
@@ -99,19 +82,24 @@ function update() {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Малюємо платформи
+    
+    // Платформи
     ctx.fillStyle = '#2d6a4f';
     platforms.forEach(p => ctx.fillRect(p.x, p.y, p.width, p.height));
 
-    // Малюємо Тараса (поки що як стильний прямокутник)
-    ctx.fillStyle = player.color;
+    // Монети
+    ctx.fillStyle = '#ffd700';
+    coins.forEach(coin => {
+        if (!coin.collected) {
+            ctx.beginPath();
+            ctx.arc(coin.x + 10, coin.y + 10, 8, 0, Math.PI*2);
+            ctx.fill();
+        }
+    });
+
+    // Тарас
+    ctx.fillStyle = '#e63946';
     ctx.fillRect(player.x, player.y, player.width, player.height);
-    
-    // Очі Тараса (щоб знати куди він дивиться)
-    ctx.fillStyle = 'white';
-    const eyeOffset = player.dx >= 0 ? 20 : 5;
-    ctx.fillRect(player.x + eyeOffset, player.y + 10, 8, 8);
 }
 
 update();
